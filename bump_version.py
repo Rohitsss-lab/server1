@@ -32,7 +32,13 @@ pdata["version"] = new_version
 with open("package.json", "w") as f:
     json.dump(pdata, f, indent=2)
 
+# Write to file
 with open("NEW_VERSION.txt", "w") as f:
     f.write(new_version)
 
+# Also write to a second backup file
+with open("BUMPED_VERSION.txt", "w") as f:
+    f.write(new_version)
+
+print(f"NEW_VERSION={new_version}")
 print(f"Bumped {old_version} -> {new_version}")

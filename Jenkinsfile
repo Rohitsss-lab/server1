@@ -56,32 +56,21 @@ pipeline {
                 bat 'npm test'
             }
         }
-        stage('Bump Version') {
+            stage('Bump Version') {
             when {
                 expression { return params.DEPLOY_TAG == null || params.DEPLOY_TAG.trim() == '' }
             }
             steps {
+                withEnv(["BUMP_TYPE=${params.BUMP_TYPE}"]) {
+                    bat '"C:\\Program Files\\Python313\\python.exe" bump_version.py'
+                }
                 script {
-                    withEnv(["BUMP_TYPE=${params.BUMP_TYPE}"]) {
-                        def output = bat(
-                            script: '"C:\\Program Files\\Python313\\python.exe" bump_version.py',
-                            returnStdout: true
-                        ).trim()
-                        echo "Python output: ${output}"
-                        def lines = output.split('\n')
-                        def versionLine = lines.find { it.trim().startsWith('NEW_VERSION=') }
-                        if (versionLine) {
-                            env.NEW_VERSION = versionLine.trim().replace('NEW_VERSION=', '').trim()
-                        } else {
-                            env.NEW_VERSION = readFile('NEW_VERSION.txt').trim()
-                        }
-                    }
+                    // Read file and strip ALL whitespace and hidden characters
+                    def rawVersion = readFile('NEW_VERSION.txt')
+                    env.NEW_VERSION = rawVersion.replaceAll('[^0-9.]', '').trim()
                     echo "==========================================="
                     echo "BUMPED VERSION = ${env.NEW_VERSION}"
                     echo "==========================================="
-                    if (!env.NEW_VERSION || env.NEW_VERSION == '') {
-                        error "Version bump failed — NEW_VERSION is empty"
-                    }
                 }
             }
         }

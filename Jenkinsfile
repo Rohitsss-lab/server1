@@ -128,21 +128,25 @@ pipeline {
         stage('Notify vertot') {
             when {
                 allOf {
-                    environment name: 'IS_DEPLOY', value: 'false'
+                    expression { return params.DEPLOY_TAG == null || params.DEPLOY_TAG.trim() == '' }
                     expression { return params.TRIGGERED_BY_DEPLOY == 'false' }
                 }
             }
             steps {
                 script {
                     echo "==========================================="
-                    echo "Notifying vertot with version: ${env.NEW_VERSION}"
+                    echo "NEW_VERSION = ${env.NEW_VERSION}"
+                    echo "Sending ver1 version ${env.NEW_VERSION} to vertot"
                     echo "==========================================="
+                    if (!env.NEW_VERSION || env.NEW_VERSION == '' || env.NEW_VERSION == '1.0.0') {
+                        error "Refusing to send wrong version '${env.NEW_VERSION}' to vertot"
+                    }
                     build job: 'vertot',
                           wait: true,
                           parameters: [
-                              string(name: 'REPO_NAME',    value: 'ver1'),
-                              string(name: 'REPO_VERSION', value: env.NEW_VERSION),
-                              string(name: 'BUMP_TYPE',    value: 'patch'),
+                              string(name: 'REPO_NAME',      value: 'ver1'),
+                              string(name: 'REPO_VERSION',   value: env.NEW_VERSION),
+                              string(name: 'BUMP_TYPE',      value: 'patch'),
                               string(name: 'DEPLOY_VERSION', value: '')
                           ]
                 }

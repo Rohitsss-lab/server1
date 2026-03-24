@@ -11,7 +11,7 @@ pipeline {
     environment {
         GIT_REPO_URL = 'https://github.com/Rohitsss-lab/server1.git'
         SERVER_IP    = '192.168.3.178'
-        DEPLOY_PATH  = '/root/server1'
+        DEPLOY_PATH  = '/root/ver1'
     }
     stages {
         stage('Clean Workspace') {

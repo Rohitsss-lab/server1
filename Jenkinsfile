@@ -5,62 +5,54 @@ pipeline {
     }
     parameters {
         string(name: 'BUMP_TYPE',           defaultValue: 'patch', description: 'Version bump type')
-        string(name: 'DEPLOY_TAG',          defaultValue: '',      description: 'Tag to deploy — leave blank for normal build')
-        string(name: 'TRIGGERED_BY_DEPLOY', defaultValue: 'false', description: 'Set true when called from vertot deploy')
+        string(name: 'DEPLOY_TAG',          defaultValue: '',      description: 'Tag to deploy')
+        string(name: 'TRIGGERED_BY_DEPLOY', defaultValue: 'false', description: 'Set true when called from vertot')
     }
     environment {
-        GIT_REPO_URL = 'https://github.com/Rohitsss-lab/ver1.git'
+        GIT_REPO_URL = 'https://github.com/Rohitsss-lab/server1.git'
+        SERVER_IP    = '192.168.3.178'
+        DEPLOY_PATH  = '/root/server1'
     }
     stages {
         stage('Clean Workspace') {
+            steps { cleanWs() }
+        }
+        stage('Checkout') {
             steps {
-                cleanWs()
+                script {
+                    if (params.DEPLOY_TAG?.trim()) {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: "v${params.DEPLOY_TAG}"]],
+                            userRemoteConfigs: [[
+                                url: "${env.GIT_REPO_URL}",
+                                credentialsId: 'github-token'
+                            ]],
+                            extensions: [[$class: 'CloneOption', noTags: false]]
+                        ])
+                    } else {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: '*/main']],
+                            userRemoteConfigs: [[
+                                url: "${env.GIT_REPO_URL}",
+                                credentialsId: 'github-token'
+                            ]]
+                        ])
+                    }
+                }
             }
         }
-       stage('Checkout') {
-    steps {
-        script {
-            if (params.DEPLOY_TAG?.trim()) {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: "v${params.DEPLOY_TAG}"]],
-                    userRemoteConfigs: [[
-                        url: "${env.GIT_REPO_URL}",
-                        credentialsId: 'github-token'
-                    ]],
-                    extensions: [[
-                        $class: 'CloneOption',
-                        noTags: false
-                    ]]
-                ])
-                echo "Checked out ver1 at tag v${params.DEPLOY_TAG}"
-            } else {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    userRemoteConfigs: [[
-                        url: "${env.GIT_REPO_URL}",
-                        credentialsId: 'github-token'
-                    ]]
-                ])
-            }
-        }
-    }
-}
         stage('Install Dependencies') {
-            steps {
-                bat 'npm install'
-            }
+            steps { bat 'npm install' }
         }
         stage('Run Tests') {
             when {
                 expression { return params.DEPLOY_TAG == null || params.DEPLOY_TAG.trim() == '' }
             }
-            steps {
-                bat 'npm test'
-            }
+            steps { bat 'npm test' }
         }
-            stage('Bump Version') {
+        stage('Bump Version') {
             when {
                 expression { return params.DEPLOY_TAG == null || params.DEPLOY_TAG.trim() == '' }
             }
@@ -69,12 +61,9 @@ pipeline {
                     bat '"C:\\Program Files\\Python313\\python.exe" bump_version.py'
                 }
                 script {
-                    // Read file and strip ALL whitespace and hidden characters
-                    def rawVersion = readFile('NEW_VERSION.txt')
-                    env.NEW_VERSION = rawVersion.replaceAll('[^0-9.]', '').trim()
-                    echo "==========================================="
+                    env.NEW_VERSION = readFile('NEW_VERSION.txt')
+                                        .replaceAll('[^0-9.]', '').trim()
                     echo "BUMPED VERSION = ${env.NEW_VERSION}"
-                    echo "==========================================="
                 }
             }
         }
@@ -94,27 +83,34 @@ pipeline {
                         git checkout -b release/v%NEW_VERSION%
                         git add versions.json package.json
                         git commit -m "chore: bump version to v%NEW_VERSION%"
-                        git remote set-url origin https://%GIT_USER%:%GIT_TOKEN%@github.com/Rohitsss-lab/ver1.git
+                        git remote set-url origin https://%GIT_USER%:%GIT_TOKEN%@github.com/Rohitsss-lab/server1.git
                         git push origin release/v%NEW_VERSION%
                         git checkout main
                         git merge release/v%NEW_VERSION%
                         git push origin main
-                        git tag v%NEW_VERSION% || echo "Tag already exists skipping"
-                        git push origin v%NEW_VERSION% || echo "Tag already pushed skipping"
+                        git tag v%NEW_VERSION% || echo "Tag already exists"
+                        git push origin v%NEW_VERSION% || echo "Tag already pushed"
                     '''
                 }
             }
         }
-        stage('Deploy') {
+        stage('Deploy to Server') {
             when {
                 expression { return params.DEPLOY_TAG != null && params.DEPLOY_TAG.trim() != '' }
             }
             steps {
-                echo "==========================================="
-                echo "DEPLOYING ver1 at tag ${params.DEPLOY_TAG}"
-                echo "==========================================="
-                bat 'npm install'
-                echo "ver1 v${params.DEPLOY_TAG} deployed on port 3001"
+                script {
+                    def deployVersion = params.DEPLOY_TAG.trim()
+                    echo "==========================================="
+                    echo "Deploying server1 v${deployVersion} to ${env.SERVER_IP}"
+                    echo "==========================================="
+                    sshagent(credentials: ['deploy-ssh-key']) {
+                        bat """
+                            ssh -o StrictHostKeyChecking=no root@${env.SERVER_IP} "cd ${env.DEPLOY_PATH} && git fetch --tags && git checkout tags/v${deployVersion} -f && npm install --production && pm2 restart ver1 || pm2 start src/index.js --name ver1 && pm2 save"
+                        """
+                    }
+                    echo "server1 v${deployVersion} is LIVE on server"
+                }
             }
         }
         stage('Notify vertot') {
@@ -126,18 +122,14 @@ pipeline {
             }
             steps {
                 script {
-                    echo "==========================================="
-                    echo "NEW_VERSION = ${env.NEW_VERSION}"
-                    echo "Sending ver1 version ${env.NEW_VERSION} to vertot"
-                    echo "==========================================="
-                    if (!env.NEW_VERSION || env.NEW_VERSION == '' || env.NEW_VERSION == '1.0.0') {
-                        error "Refusing to send wrong version '${env.NEW_VERSION}' to vertot"
-                    }
+                    def sendVersion = readFile('NEW_VERSION.txt')
+                                        .replaceAll('[^0-9.]', '').trim()
+                    echo "Sending server1 version ${sendVersion} to vertot"
                     build job: 'vertot',
                           wait: true,
                           parameters: [
-                              string(name: 'REPO_NAME',      value: 'ver1'),
-                              string(name: 'REPO_VERSION',   value: env.NEW_VERSION),
+                              string(name: 'REPO_NAME',      value: 'server1'),
+                              string(name: 'REPO_VERSION',   value: sendVersion),
                               string(name: 'BUMP_TYPE',      value: 'patch'),
                               string(name: 'DEPLOY_VERSION', value: '')
                           ]
@@ -146,7 +138,7 @@ pipeline {
         }
     }
     post {
-        success { echo "ver1 pipeline completed successfully" }
-        failure { echo "ver1 pipeline FAILED" }
+        success { echo "server1 pipeline completed successfully" }
+        failure { echo "server1 pipeline FAILED" }
     }
 }

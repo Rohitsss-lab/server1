@@ -106,7 +106,7 @@ pipeline {
                     echo "==========================================="
                     sshagent(credentials: ['deploy-ssh-key']) {
                         bat """
-                            ssh -o StrictHostKeyChecking=no root@${env.SERVER_IP} "cd ${env.DEPLOY_PATH} && git fetch --tags && git checkout tags/v${deployVersion} -f && npm install --production && pm2 restart ver1 || pm2 start src/index.js --name ver1 && pm2 save"
+                            ssh -o StrictHostKeyChecking=no root@${env.SERVER_IP} "cd ${env.DEPLOY_PATH} && git fetch --tags && git checkout tags/v${deployVersion} -f && npm install --production && pm2 restart server1 || pm2 start src/index.js --name server1 && pm2 save"
                         """
                     }
                     echo "server1 v${deployVersion} is LIVE on server"
